@@ -21,7 +21,7 @@ class User {
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id'],
+      id: json['id'].toString(), // Convert to string to handle both String and int
       nama: json['nama'],
       email: json['email'],
       peran: json['peran'],
@@ -71,7 +71,7 @@ class Karyawan {
 
   factory Karyawan.fromJson(Map<String, dynamic> json) {
     return Karyawan(
-      id: json['id'],
+      id: json['id'].toString(), // Convert to string to handle both String and int
       nip: json['nip'],
       namaLengkap: json['nama_lengkap'],
       jabatan: json['jabatan'],

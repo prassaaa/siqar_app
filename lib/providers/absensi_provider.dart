@@ -65,7 +65,17 @@ class AbsensiProvider with ChangeNotifier {
   Future<bool> scanQRCode(String qrCode, double latitude, double longitude, String tipe) async {
     _setLoading(true);
     
+    // Log the parameters being sent for debugging
+    print('Scanning QR Code with:');
+    print('QR Code: $qrCode');
+    print('Latitude: $latitude');
+    print('Longitude: $longitude');
+    print('Tipe: $tipe');
+    
     final response = await _apiService.scanQR(qrCode, latitude, longitude, tipe);
+    
+    // Log the response for debugging
+    print('Scan QR Response: $response');
     
     if (response['status'] == true) {
       _message = response['message'];
@@ -126,14 +136,27 @@ class AbsensiProvider with ChangeNotifier {
   Future<bool> checkQRCode(String kode) async {
     _setLoading(true);
     
+    print('Checking QR Code: $kode');
+    
     final response = await _apiService.checkQRCode(kode);
     
-    if (response['status'] == true && response['data'] != null) {
-      _scannedQRCode = QRCode.fromJson(response['data']['qrcode']);
-      _message = response['message'];
-      _setLoading(false);
-      notifyListeners();
-      return true;
+    print('Check QR Response: $response');
+    
+    if (response['status'] == true && response['data'] != null && response['data']['qrcode'] != null) {
+      try {
+        _scannedQRCode = QRCode.fromJson(response['data']['qrcode']);
+        _message = response['message'] ?? 'QR Code valid.';
+        _setLoading(false);
+        notifyListeners();
+        return true;
+      } catch (e) {
+        print('Error parsing QR Code: $e');
+        _message = 'Error parsing QR Code data.';
+        _scannedQRCode = null;
+        _setLoading(false);
+        notifyListeners();
+        return false;
+      }
     } else {
       _message = response['message'] ?? 'QR Code tidak valid.';
       _scannedQRCode = null;
@@ -151,7 +174,7 @@ class AbsensiProvider with ChangeNotifier {
     
     QRCode? qrCode;
     
-    if (response['status'] == true && response['data'] != null) {
+    if (response['status'] == true && response['data'] != null && response['data']['qrcode'] != null) {
       qrCode = QRCode.fromJson(response['data']['qrcode']);
     } else {
       _message = response['message'] ?? 'Tidak ada QR Code aktif saat ini.';

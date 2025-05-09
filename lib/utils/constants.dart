@@ -5,16 +5,19 @@ class AppConstants {
   // Gunakan salah satu dari konfigurasi berikut sesuai dengan environment Anda:
   
   // Untuk Android Emulator (gunakan ini jika menjalankan di Android emulator)
-  static const String apiBaseUrl = 'http://10.0.2.2:8000/api';
+  // static const String apiBaseUrl = 'http://10.0.2.2:8000/api';
   
   // Untuk iOS Simulator (gunakan ini jika menjalankan di iOS simulator)
   // static const String apiBaseUrl = 'http://localhost:8000/api';
   
   // Untuk device fisik (gunakan IP address komputer Anda)
-  // static const String apiBaseUrl = 'http://192.168.xxx.xxx:8000/api';
+  static const String apiBaseUrl = 'http://192.168.18.226:8000/api';
   
   // Untuk production (gunakan domain)
   // static const String apiBaseUrl = 'https://your-domain.com/api';
+
+  // Debug settings
+  static const bool isDebugMode = true; // Set to false before production release
   
   // App Info
   static const String appName = 'SIQAR';

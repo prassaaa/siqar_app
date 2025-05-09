@@ -25,7 +25,7 @@ class QRCode {
 
   factory QRCode.fromJson(Map<String, dynamic> json) {
     return QRCode(
-      id: json['id'],
+      id: json['id'].toString(), // Convert to string to handle both String and int
       kode: json['kode'],
       deskripsi: json['deskripsi'],
       tanggal: json['tanggal'],
@@ -77,12 +77,12 @@ class Lokasi {
 
   factory Lokasi.fromJson(Map<String, dynamic> json) {
     return Lokasi(
-      id: json['id'],
+      id: json['id'].toString(), // Convert to string to handle both String and int
       namaLokasi: json['nama_lokasi'],
       alamat: json['alamat'],
-      latitude: json['latitude'] != null ? double.parse(json['latitude'].toString()) : null,
-      longitude: json['longitude'] != null ? double.parse(json['longitude'].toString()) : null,
-      radius: json['radius'] != null ? int.parse(json['radius'].toString()) : null,
+      latitude: json['latitude'] != null ? double.tryParse(json['latitude'].toString()) : null,
+      longitude: json['longitude'] != null ? double.tryParse(json['longitude'].toString()) : null,
+      radius: json['radius'] != null ? int.tryParse(json['radius'].toString()) : null,
       status: json['status'],
       keterangan: json['keterangan'],
     );

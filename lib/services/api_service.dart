@@ -30,6 +30,11 @@ class ApiService {
         return handler.next(options);
       },
       onError: (DioException e, handler) {
+        if (AppConstants.isDebugMode) {
+          print("DioError: ${e.toString()}");
+          print("Request: ${e.requestOptions.uri}");
+          print("Response: ${e.response?.data}");
+        }
         return handler.next(e);
       },
     ));
@@ -198,14 +203,39 @@ class ApiService {
   
   Future<Map<String, dynamic>> scanQR(String qrCode, double latitude, double longitude, String tipe) async {
     try {
+      if (AppConstants.isDebugMode) {
+        print('API call: scanQR - Sending data:');
+        print('qr_code: $qrCode, latitude: $latitude, longitude: $longitude, tipe: $tipe');
+      }
+      
       final response = await _dio.post('/absensi/scan', data: {
         'qr_code': qrCode,
         'latitude': latitude,
         'longitude': longitude,
         'tipe': tipe,
       });
-      return _handleResponse(response);
+      
+      // Tangani response dengan lebih robust
+      final Map<String, dynamic> result = _handleResponse(response);
+      
+      if (AppConstants.isDebugMode) {
+        print('Raw API response:');
+        print(response.data);
+        print('Processed response:');
+        print(result);
+      }
+      
+      return result;
     } catch (e) {
+      if (AppConstants.isDebugMode) {
+        print('API error in scanQR: $e');
+        if (e is DioException) {
+          print('DioException details:');
+          print('Type: ${e.type}');
+          print('Message: ${e.message}');
+          print('Response: ${e.response?.data}');
+        }
+      }
       return _handleError(e);
     }
   }
@@ -356,71 +386,10 @@ class ApiService {
     }
   }
   
-  // LOKASI ENDPOINTS
-  
-  Future<List<Lokasi>?> getAllLokasi({String? status, String? search, int page = 1}) async {
+  // Get server time untuk debugging
+  Future<Map<String, dynamic>> getServerTime() async {
     try {
-      Map<String, dynamic> params = {
-        'page': page,
-        'per_page': 20,
-      };
-      
-      if (status != null) params['status'] = status;
-      if (search != null) params['search'] = search;
-      
-      final response = await _dio.get('/lokasi', queryParameters: params);
-      final responseData = _handleResponse(response);
-      
-      if (responseData['status'] == true && responseData['data'] != null) {
-        final List<dynamic> lokasiList = responseData['data']['lokasi'];
-        return lokasiList.map((json) => Lokasi.fromJson(json)).toList();
-      }
-      
-      return null;
-    } catch (e) {
-      _handleError(e);
-      return null;
-    }
-  }
-  
-  Future<Lokasi?> getLokasiById(String id) async {
-    try {
-      final response = await _dio.get('/lokasi/$id');
-      final responseData = _handleResponse(response);
-      
-      if (responseData['status'] == true && responseData['data'] != null) {
-        final lokasiData = responseData['data']['lokasi'];
-        return Lokasi.fromJson(lokasiData);
-      }
-      
-      return null;
-    } catch (e) {
-      _handleError(e);
-      return null;
-    }
-  }
-  
-  Future<Map<String, dynamic>> createLokasi(Map<String, dynamic> data) async {
-    try {
-      final response = await _dio.post('/lokasi', data: data);
-      return _handleResponse(response);
-    } catch (e) {
-      return _handleError(e);
-    }
-  }
-  
-  Future<Map<String, dynamic>> updateLokasi(String id, Map<String, dynamic> data) async {
-    try {
-      final response = await _dio.put('/lokasi/$id', data: data);
-      return _handleResponse(response);
-    } catch (e) {
-      return _handleError(e);
-    }
-  }
-  
-  Future<Map<String, dynamic>> deleteLokasi(String id) async {
-    try {
-      final response = await _dio.delete('/lokasi/$id');
+      final response = await _dio.get('/server-time');
       return _handleResponse(response);
     } catch (e) {
       return _handleError(e);
@@ -470,15 +439,39 @@ class ApiService {
       };
     }
     
-    if (response.data is Map) {
-      return response.data;
+    try {
+      if (response.data is Map) {
+        // Tambahkan validasi untuk memastikan semua field yang diharapkan ada
+        final data = Map<String, dynamic>.from(response.data);
+        
+        // Pastikan field status ada
+        if (!data.containsKey('status')) {
+          data['status'] = response.statusCode! < 300;
+        }
+        
+        // Pastikan field message ada
+        if (!data.containsKey('message')) {
+          data['message'] = response.statusMessage ?? 'No message provided';
+        }
+        
+        return data;
+      }
+      
+      return {
+        'status': response.statusCode! < 300,
+        'message': response.statusMessage ?? 'No message provided',
+        'data': response.data,
+      };
+    } catch (e) {
+      if (AppConstants.isDebugMode) {
+        print('Error processing response: $e');
+      }
+      return {
+        'status': false,
+        'message': 'Error processing response: $e',
+        'error': e.toString(),
+      };
     }
-    
-    return {
-      'status': response.statusCode! < 300,
-      'message': response.statusMessage,
-      'data': response.data,
-    };
   }
   
   Map<String, dynamic> _handleError(dynamic error) {
@@ -491,12 +484,30 @@ class ApiService {
         message = 'Koneksi timeout. Silakan periksa koneksi internet Anda.';
       } else if (error.type == DioExceptionType.connectionError) {
         message = 'Tidak dapat terhubung ke server. Silakan periksa koneksi internet Anda.';
+      } else if (error.response != null) {
+        // Try to get error message from response
+        try {
+          final responseData = error.response!.data;
+          if (responseData is Map && responseData.containsKey('message')) {
+            message = responseData['message'];
+          } else if (responseData is String) {
+            message = responseData;
+          }
+        } catch (e) {
+          // If we can't parse the error message, use the default one
+        }
       }
+    }
+    
+    if (AppConstants.isDebugMode) {
+      print('API Error: $message');
+      print('Original error: $error');
     }
     
     return {
       'status': false,
       'message': message,
+      'error': error.toString(),
     };
   }
 }

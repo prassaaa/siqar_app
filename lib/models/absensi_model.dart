@@ -23,7 +23,7 @@ class Absensi {
 
   factory Absensi.fromJson(Map<String, dynamic> json) {
     return Absensi(
-      id: json['id'],
+      id: json['id'].toString(), // Convert to string to handle both String and int
       tanggal: json['tanggal'],
       hari: json['hari'],
       waktuMasuk: json['waktu_masuk'],
@@ -82,16 +82,16 @@ class AbsensiLaporan {
   factory AbsensiLaporan.fromJson(Map<String, dynamic> json) {
     return AbsensiLaporan(
       periode: json['periode'],
-      tahun: json['tahun'],
-      bulan: json['bulan'],
-      totalHariKerja: json['total_hari_kerja'],
-      totalHadir: json['total_hadir'],
-      totalTerlambat: json['total_terlambat'],
-      totalIzin: json['total_izin'],
-      totalSakit: json['total_sakit'],
-      totalAlpha: json['total_alpha'],
-      persentaseKehadiran: json['persentase_kehadiran'].toDouble(),
-      persentaseKeterlambatan: json['persentase_keterlambatan'].toDouble(),
+      tahun: int.tryParse(json['tahun'].toString()) ?? 0,
+      bulan: int.tryParse(json['bulan'].toString()) ?? 0,
+      totalHariKerja: int.tryParse(json['total_hari_kerja'].toString()) ?? 0,
+      totalHadir: int.tryParse(json['total_hadir'].toString()) ?? 0,
+      totalTerlambat: int.tryParse(json['total_terlambat'].toString()) ?? 0,
+      totalIzin: int.tryParse(json['total_izin'].toString()) ?? 0,
+      totalSakit: int.tryParse(json['total_sakit'].toString()) ?? 0,
+      totalAlpha: int.tryParse(json['total_alpha'].toString()) ?? 0,
+      persentaseKehadiran: double.tryParse(json['persentase_kehadiran'].toString()) ?? 0.0,
+      persentaseKeterlambatan: double.tryParse(json['persentase_keterlambatan'].toString()) ?? 0.0,
       karyawan: json['karyawan'],
     );
   }

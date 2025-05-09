@@ -16,57 +16,146 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   final MobileScannerController _scannerController = MobileScannerController();
+  late AnimationController _animationController;
+  
   bool _isProcessing = false;
   bool _isQRChecked = false;
-  bool _hasPermission = false;
+  bool _hasLocationPermission = false;
   String _scanType = 'masuk'; // Default scan type
   bool _isTorchOn = false;
+  String? _scannedCode; // Store the raw scanned QR code
   
   @override
   void initState() {
     super.initState();
+    
+    // Initialize animation controller
+    _animationController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat(reverse: true);
+    
     _checkLocationPermission();
   }
   
+  @override
+  void dispose() {
+    _animationController.dispose();
+    _scannerController.dispose();
+    super.dispose();
+  }
+  
   Future<void> _checkLocationPermission() async {
+    // Check if location services are enabled
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // Location services are not enabled, show dialog
+      await _showLocationServicesDialog();
+      return;
+    }
+
+    // Check location permission
     LocationPermission permission = await Geolocator.checkPermission();
-    
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied || 
-          permission == LocationPermission.deniedForever) {
-        setState(() {
-          _hasPermission = false;
-        });
+      if (permission == LocationPermission.denied) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location permissions are denied'),
+            backgroundColor: Colors.red,
+          ),
+        );
         return;
       }
     }
-    
+
+    if (permission == LocationPermission.deniedForever) {
+      // Permissions are denied forever, handle appropriately
+      await _showAppSettingsDialog(
+        'Location permission is required for attendance verification. Please enable it in app settings.',
+      );
+      return;
+    }
+
+    // Permissions are granted
     setState(() {
-      _hasPermission = true;
+      _hasLocationPermission = true;
     });
   }
   
+  Future<void> _showLocationServicesDialog() async {
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Location Services Disabled'),
+          content: const Text(
+              'Location services are disabled. To use attendance features, please enable location services.'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text('Open Settings'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                Geolocator.openLocationSettings();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  Future<void> _showAppSettingsDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Permission Required'),
+          content: Text(message),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text('Open Settings'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                Geolocator.openAppSettings();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
   Future<Position?> _getCurrentLocation() async {
-    try {
-      if (!_hasPermission) {
-        await _checkLocationPermission();
-        if (!_hasPermission) {
-          _showErrorDialog(
-            'Izin lokasi dibutuhkan',
-            'Aplikasi membutuhkan izin lokasi untuk melakukan absensi. Silakan aktifkan izin lokasi pada pengaturan perangkat Anda.'
-          );
-          return null;
-        }
+    if (!_hasLocationPermission) {
+      await _checkLocationPermission();
+      if (!_hasLocationPermission) {
+        return null;
       }
-      
+    }
+    
+    try {
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high
       );
     } catch (e) {
-      _showErrorDialog(
-        'Gagal Mendapatkan Lokasi', 
-        'Terjadi kesalahan saat mendapatkan lokasi Anda. Pastikan GPS Anda aktif.'
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error getting location: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
       return null;
     }
@@ -77,6 +166,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     
     setState(() {
       _isProcessing = true;
+      _scannedCode = code; // Store the raw QR code
     });
     
     // Check QR Code
@@ -106,6 +196,16 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   }
   
   Future<void> _submitAttendance() async {
+    if (_scannedCode == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('QR Code tidak tersedia. Silakan scan ulang.'),
+          backgroundColor: AppConstants.errorColor,
+        ),
+      );
+      return;
+    }
+    
     setState(() {
       _isProcessing = true;
     });
@@ -119,28 +219,11 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       return;
     }
     
-    // Submit attendance
+    // Submit attendance using the raw scanned QR code
     final absensiProvider = Provider.of<AbsensiProvider>(context, listen: false);
-    final qrCode = absensiProvider.scannedQRCode;
-    
-    if (qrCode == null || qrCode.kode == null) {
-      setState(() {
-        _isProcessing = false;
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('QR Code tidak valid'),
-            backgroundColor: AppConstants.errorColor,
-          ),
-        );
-      }
-      return;
-    }
     
     final success = await absensiProvider.scanQRCode(
-      qrCode.kode!,
+      _scannedCode!,
       position.latitude,
       position.longitude,
       _scanType,
@@ -169,185 +252,176 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     }
   }
   
-  void _showErrorDialog(String title, String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
+  Widget _buildPermissionView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.location_off,
+              size: 80,
+              color: AppConstants.textSecondaryColor,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Izin Lokasi Dibutuhkan',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Aplikasi membutuhkan izin lokasi untuk verifikasi kehadiran. Silakan berikan izin yang diperlukan.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppConstants.textSecondaryColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            CustomButton(
+              text: 'Berikan Izin Lokasi',
+              onPressed: _checkLocationPermission,
+              icon: Icons.location_on,
+            ),
+          ],
+        ),
       ),
     );
   }
   
-  Widget _buildScannerView() {
-    if (!_hasPermission) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.location_off,
-                size: 80,
-                color: AppConstants.textSecondaryColor,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Izin Lokasi Dibutuhkan',
-                style: Theme.of(context).textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Aplikasi membutuhkan izin lokasi untuk melakukan absensi. Silakan aktifkan izin lokasi pada pengaturan perangkat Anda.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppConstants.textSecondaryColor,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              CustomButton(
-                text: 'Berikan Izin Lokasi',
-                onPressed: _checkLocationPermission,
-                icon: Icons.location_on,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+  Widget _buildQRResultView() {
+    final absensiProvider = Provider.of<AbsensiProvider>(context);
+    final qrCode = absensiProvider.scannedQRCode;
     
-    if (_isQRChecked) {
-      final absensiProvider = Provider.of<AbsensiProvider>(context);
-      final qrCode = absensiProvider.scannedQRCode;
-      
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.check_circle,
-                size: 80,
-                color: AppConstants.successColor,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'QR Code Valid',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 16),
-              if (qrCode != null)
-                Column(
-                  children: [
-                    Text(
-                      qrCode.deskripsi,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.check_circle,
+              size: 80,
+              color: AppConstants.successColor,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'QR Code Valid',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            if (qrCode != null)
+              Column(
+                children: [
+                  Text(
+                    qrCode.deskripsi,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(height: 8),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tanggal: ${qrCode.tanggal}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  if (qrCode.waktuMulai != null && qrCode.waktuBerakhir != null)
                     Text(
-                      'Tanggal: ${qrCode.tanggal}',
+                      'Waktu: ${qrCode.waktuMulai} - ${qrCode.waktuBerakhir}',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                    if (qrCode.waktuMulai != null && qrCode.waktuBerakhir != null)
-                      Text(
-                        'Waktu: ${qrCode.waktuMulai} - ${qrCode.waktuBerakhir}',
+                  if (qrCode.lokasi != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        'Lokasi: ${qrCode.lokasi!.namaLokasi}',
                         style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
                       ),
-                    if (qrCode.lokasi != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(
-                          'Lokasi: ${qrCode.lokasi!.namaLokasi}',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                  ],
-                ),
-              const SizedBox(height: 32),
-              Text(
-                'Pilih Jenis Absensi:',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Radio<String>(
-                    value: 'masuk',
-                    groupValue: _scanType,
-                    onChanged: (value) {
-                      setState(() {
-                        _scanType = value!;
-                      });
-                    },
-                    activeColor: AppConstants.primaryColor,
-                  ),
-                  const Text('Absen Masuk'),
-                  const SizedBox(width: 24),
-                  Radio<String>(
-                    value: 'keluar',
-                    groupValue: _scanType,
-                    onChanged: (value) {
-                      setState(() {
-                        _scanType = value!;
-                      });
-                    },
-                    activeColor: AppConstants.primaryColor,
-                  ),
-                  const Text('Absen Keluar'),
+                    ),
                 ],
               ),
-              const SizedBox(height: 32),
-              CustomButton(
-                text: 'Lakukan Absensi',
-                onPressed: _submitAttendance,
-                loading: _isProcessing,
-                icon: Icons.check,
-              ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _isQRChecked = false;
-                  });
-                },
-                child: Text(
-                  'Scan Ulang',
-                  style: TextStyle(color: AppConstants.primaryColor),
+            const SizedBox(height: 32),
+            Text(
+              'Pilih Jenis Absensi:',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Radio<String>(
+                  value: 'masuk',
+                  groupValue: _scanType,
+                  onChanged: (value) {
+                    setState(() {
+                      _scanType = value!;
+                    });
+                  },
+                  activeColor: AppConstants.primaryColor,
                 ),
+                const Text('Absen Masuk'),
+                const SizedBox(width: 24),
+                Radio<String>(
+                  value: 'keluar',
+                  groupValue: _scanType,
+                  onChanged: (value) {
+                    setState(() {
+                      _scanType = value!;
+                    });
+                  },
+                  activeColor: AppConstants.primaryColor,
+                ),
+                const Text('Absen Keluar'),
+              ],
+            ),
+            const SizedBox(height: 32),
+            CustomButton(
+              text: 'Lakukan Absensi',
+              onPressed: _submitAttendance,
+              loading: _isProcessing,
+              icon: Icons.check,
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _isQRChecked = false;
+                });
+              },
+              child: Text(
+                'Scan Ulang',
+                style: TextStyle(color: AppConstants.primaryColor),
               ),
+            ),
+            // Debug info
+            if (AppConstants.isDebugMode) ...[
+              const Divider(),
+              Text('Raw QR: $_scannedCode', style: TextStyle(fontSize: 12)),
+              if (qrCode?.kode != null)
+                Text('QRCode.kode: ${qrCode?.kode}', style: TextStyle(fontSize: 12)),
             ],
-          ),
+          ],
         ),
-      );
-    }
-    
+      ),
+    );
+  }
+
+  Widget _buildScannerView() {
     return Stack(
       children: [
         MobileScanner(
           controller: _scannerController,
           onDetect: (capture) {
             if (capture.barcodes.isNotEmpty && mounted && !_isProcessing) {
-              // In the newer version of mobile_scanner, we access the first barcode from barcodes list
               final barcode = capture.barcodes.first;
               if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty) {
                 _processScanResult(barcode.rawValue!);
               }
             }
           },
+          // Remove the errorBuilder completely
         ),
         Container(
           decoration: BoxDecoration(
@@ -382,15 +456,35 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               ),
               // Scanline animation
               Center(
-                child: AnimatedPositioned(
-                  duration: const Duration(seconds: 2),
-                  top: 0,
-                  curve: Curves.easeInOut,
-                  child: Container(
-                    width: 250,
-                    height: 2,
-                    color: AppConstants.primaryColor,
+                child: AnimatedBuilder(
+                  animation: _animationController,
+                  builder: (context, child) {
+                    return Container(
+                      width: 250,
+                      height: 3,
+                      margin: EdgeInsets.only(
+                        top: 250 * _animationController.value,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppConstants.primaryColor,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              // Instructions
+              Positioned(
+                bottom: 100,
+                left: 0,
+                right: 0,
+                child: Text(
+                  'Arahkan ke kode QR untuk absensi',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ],
@@ -429,14 +523,10 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               ),
           ],
         ),
-        body: _buildScannerView(),
+        body: _isQRChecked ? 
+          _buildQRResultView() : 
+          (_hasLocationPermission ? _buildScannerView() : _buildPermissionView()),
       ),
     );
-  }
-  
-  @override
-  void dispose() {
-    _scannerController.dispose();
-    super.dispose();
   }
 }
